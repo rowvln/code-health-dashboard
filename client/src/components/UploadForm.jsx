@@ -5,18 +5,28 @@ export default function UploadForm({ onAnalyze, loading }) {
 
   function handleSubmit(event) {
     event.preventDefault()
-    if (!selectedFile) return
+
+    if (!selectedFile || loading) {
+      return
+    }
+
     onAnalyze(selectedFile)
   }
 
+  function handleFileChange(event) {
+    const file = event.target.files?.[0] || null
+    setSelectedFile(file)
+  }
+
   return (
-    <form className="upload-form panel" onSubmit={handleSubmit}>
-      <label htmlFor="fileUpload">Upload a Python file or zip archive</label>
+    <form className="panel upload-form" onSubmit={handleSubmit}>
+      <label htmlFor="file-upload">Upload a Python file or zipped project</label>
       <input
-        id="fileUpload"
+        id="file-upload"
         type="file"
         accept=".py,.zip"
-        onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+        onChange={handleFileChange}
+        disabled={loading}
       />
       <button type="submit" disabled={!selectedFile || loading}>
         {loading ? 'Analyzing...' : 'Analyze Code'}

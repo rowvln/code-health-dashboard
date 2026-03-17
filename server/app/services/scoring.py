@@ -6,7 +6,20 @@ Transforms raw analysis data into:
 - human-readable labels
 - prioritized recommendations
 
-This is a rule-based system designed for clarity and explainability.
+This layer focuses on:
+- clarity over complexity
+- explainable scoring (not AI-driven)
+- actionable outputs for both technical and non-technical users
+
+Design philosophy:
+- deterministic scoring
+- easy to reason about
+- easy to extend
+
+Future improvements:
+- customizable scoring weights
+- AI-assisted recommendations
+- historical trend tracking
 """
 from __future__ import annotations
 
@@ -24,16 +37,19 @@ SEVERITY_WEIGHTS = {
 
 def score_file(issue_types: list[str], complexity: int) -> int:
     """
-    Calculates a score based on:
-    - severity-weighted issue penalties
-    - complexity penalties
+    Computes a code health score for a single file.
+
+    Scoring model:
+    - start from 100
+    - subtract penalties based on issue severity
+    - subtract penalties based on complexity thresholds
 
     Design choice:
-    - start from 100 and subtract penalties
-    - ensures scores are intuitive and comparable
+    - ensures scores are intuitive (higher = better)
+    - keeps scoring explainable and predictable
 
-    Future improvement:
-    - weight different issue types differently per use case
+    Future improvements:
+    - dynamic weighting based on project type
     """
     score = 100
     score -= sum(SEVERITY_WEIGHTS.get(issue_type, 1) for issue_type in issue_types)
@@ -86,18 +102,22 @@ def get_complexity_label(complexity: int) -> str:
     return "Very difficult to maintain"
 
 
-def build_recommendations(file_payloads: list[dict], severity_counter: Counter) -> list[str]:
+def build_recommendations(file_payloads: list[dict]) -> list[str]:
     """
-    Generates actionable recommendations based on:
-    - highest issue counts
-    - highest complexity
-    - severity distribution
+    Generates top actionable recommendations.
 
-    This is a rule-based system (not AI-driven).
+    Strategy:
+    - prioritize lowest-scoring files
+    - focus on highest-impact improvements first
+    - limit output to avoid overwhelming users
 
-    Goal:
-    - highlight the highest-impact improvements first
-    - keep output understandable for non-technical users
+    Important:
+    - rule-based (not dynamically generated with AI)
+    - intentionally simple for interpretability
+
+    Future improvements:
+    - context-aware recommendations
+    - grouping by issue type
     """
     recommendations = []
     sorted_files = sorted(file_payloads, key=lambda item: item["score"])
@@ -141,6 +161,22 @@ def build_recommendations(file_payloads: list[dict], severity_counter: Counter) 
 
 
 def build_score_payload(file_results: list[dict]) -> dict:
+    """
+    Aggregates file-level analysis into a dashboard-ready payload.
+
+    Produces:
+    - overall score
+    - summary metrics (issues, complexity, etc.)
+    - per-file breakdown
+    - recommendations
+
+    This is the final transformation layer before data is sent to the frontend.
+
+    Design focus:
+    - consistency
+    - readability
+    - frontend-friendly structure
+    """
     payload_files = []
     severity_counter = Counter()
     issues_found = []

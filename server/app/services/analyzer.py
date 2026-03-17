@@ -1,13 +1,24 @@
 """
 Analyzer Service
 
-Handles:
-- file ingestion (.py or .zip)
-- extraction of zip archives
-- running static analysis tools (pylint, radon)
-- normalizing results into a structured format
+This module is responsible for:
+- handling uploaded files (.py or .zip)
+- extracting zip archives into a temporary workspace
+- filtering valid Python source files
+- running static analysis tools (pylint + radon)
+- normalizing results into a consistent structure
 
-This acts as the bridge between raw tooling output and the scoring system.
+This acts as the core pipeline between raw code input and the scoring system.
+
+Design notes:
+- synchronous processing (MVP simplicity)
+- defensive handling of malformed files and tool failures
+- avoids analyzing system/metadata files (macOS, venv, etc.)
+
+Future improvements:
+- parallelize file analysis for performance
+- support additional languages
+- add background job processing (Celery / queue)
 """
 from __future__ import annotations
 
@@ -20,23 +31,38 @@ from tempfile import TemporaryDirectory
 
 from .scoring import build_score_payload
 
-
 def _should_analyze_file(file_path: Path) -> bool:
     """
     Determines whether a file should be included in analysis.
 
     Filters out:
-    - macOS metadata folders (__MACOSX)
-    - hidden system files (.DS_Store)
-    - AppleDouble metadata files (._*)
+    - system folders (__MACOSX, .git, etc.)
+    - dependency folders (venv, node_modules)
+    - cache folders (__pycache__)
+    - macOS metadata files (.DS_Store, ._*)
 
     Keeps:
-    - valid Python source files (.py), including underscore-prefixed modules
+    - valid Python source files (.py)
+
+    This prevents unnecessary processing and avoids noise from non-source files.
     """
-    parts = file_path.parts
+    parts = set(file_path.parts)
     name = file_path.name
 
-    if "__MACOSX" in parts:
+    ignored_dirs = {
+        "__MACOSX",
+        ".git",
+        "node_modules",
+        "venv",
+        ".venv",
+        "__pycache__",
+        "dist",
+        "build",
+        ".mypy_cache",
+        ".pytest_cache",
+    }
+
+    if parts & ignored_dirs:
         return False
 
     if name == ".DS_Store":
@@ -47,22 +73,29 @@ def _should_analyze_file(file_path: Path) -> bool:
 
     return file_path.suffix.lower() == ".py"
 
-
 def analyze_path(file_path: Path) -> dict:
     if file_path.suffix.lower() == ".zip":
         return _analyze_zip(file_path)
     return _analyze_python_files([file_path])
 
-
 def _analyze_zip(zip_path: Path) -> dict:
-    """
-    Extracts and analyzes all valid Python files from a zip archive.
+     """
+    Extracts and analyzes Python files from a zip archive.
 
-    Notes:
-    - Uses a temporary directory to avoid polluting the project
-    - Recursively scans extracted contents
-    - Filters out system/metadata files
-    - Future improvement: preserve relative paths for better file identification
+    Workflow:
+    1. extract zip into a temporary directory
+    2. recursively scan for valid Python files
+    3. apply filtering rules (_should_analyze_file)
+    4. limit file count to keep performance predictable
+    5. pass filtered files into analysis pipeline
+
+    Design decisions:
+    - uses TemporaryDirectory to avoid polluting filesystem
+    - enforces a max file limit to prevent long-running requests
+
+    Future improvements:
+    - preserve folder structure in results
+    - allow user-configurable file limits
     """
     with TemporaryDirectory() as temp_dir:
         extract_dir = Path(temp_dir) / "extracted"
@@ -71,10 +104,14 @@ def _analyze_zip(zip_path: Path) -> dict:
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(extract_dir)
 
-        python_files = [
-            path for path in extract_dir.rglob("*")
-            if path.is_file() and _should_analyze_file(path)
-        ]
+        python_files = sorted(
+            [
+                path for path in extract_dir.rglob("*")
+                if path.is_file() and _should_analyze_file(path)
+            ]
+        )
+
+        MAX_FILES = 100
 
         if not python_files:
             return {
@@ -95,8 +132,18 @@ def _analyze_zip(zip_path: Path) -> dict:
                 ],
             }
 
-        return _analyze_python_files(python_files)
+        truncated = len(python_files) > MAX_FILES
+        files_to_analyze = python_files[:MAX_FILES]
 
+        result = _analyze_python_files(files_to_analyze)
+
+        if truncated:
+            result["recommendations"].insert(
+                0,
+                f"Only the first {MAX_FILES} Python files were analyzed to keep the MVP responsive."
+            )
+
+        return result
 
 def _normalize_pylint_issue(issue: dict) -> dict:
     return {
@@ -107,15 +154,21 @@ def _normalize_pylint_issue(issue: dict) -> dict:
         "message_id": issue.get("message-id", ""),
     }
 
-
 def _run_pylint(file_path: Path) -> dict:
     """
-    Runs pylint on a given file and returns normalized issue data.
+    Runs pylint on a given Python file.
+
+    Returns:
+    - list of normalized issues (type, message, line, etc.)
 
     Notes:
-    - Uses JSON output format for structured parsing
-    - Does not fail on lint errors (check=False)
-    - Future improvement: support configuration via .pylintrc
+    - uses JSON output for structured parsing
+    - timeout prevents a single file from blocking the entire request
+    - does not fail the pipeline if pylint errors
+
+    Future improvements:
+    - support custom pylint configs (.pylintrc)
+    - group issues by severity before returning
     """
     command = [
         shutil.which("pylint") or "pylint",
@@ -123,7 +176,27 @@ def _run_pylint(file_path: Path) -> dict:
         "--output-format=json",
         "--score=n",
     ]
-    completed = subprocess.run(command, capture_output=True, text=True, check=False)
+
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "issues": [
+                {
+                    "type": "warning",
+                    "message": "pylint analysis timed out for this file",
+                    "line": "—",
+                    "symbol": "timeout",
+                    "message_id": "TIMEOUT",
+                }
+            ]
+        }
 
     if not completed.stdout.strip():
         return {"issues": []}
@@ -136,17 +209,21 @@ def _run_pylint(file_path: Path) -> dict:
 
     return {"issues": issues}
 
-
 def _run_radon(file_path: Path) -> dict:
     """
     Runs radon to calculate cyclomatic complexity.
 
-    Notes:
-    - Handles inconsistent JSON structures returned by radon
-    - Falls back gracefully if parsing fails
-    - Uses max complexity as a representative metric
+    Returns:
+    - maximum complexity value found in the file
 
-    Future improvement:
+    Notes:
+    - radon output structure can vary → normalized defensively
+    - timeout prevents long-running analysis on complex files
+
+    Design choice:
+    - using max complexity as a simple, interpretable signal
+
+    Future improvements:
     - include average complexity
     - include per-function breakdown
     """
@@ -156,14 +233,23 @@ def _run_radon(file_path: Path) -> dict:
         str(file_path),
         "-j",
     ]
-    completed = subprocess.run(command, capture_output=True, text=True, check=False)
+
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        return {"complexity": 0}
 
     if not completed.stdout.strip():
         return {"complexity": 0}
 
     try:
         data = json.loads(completed.stdout)
-
         entries = data.get(str(file_path))
 
         if entries is None and isinstance(data, dict) and data:
@@ -182,7 +268,6 @@ def _run_radon(file_path: Path) -> dict:
             ),
             default=0,
         )
-
     except json.JSONDecodeError:
         max_complexity = 0
 
@@ -191,19 +276,24 @@ def _run_radon(file_path: Path) -> dict:
 
 def _analyze_python_files(files: list[Path]) -> dict:
     """
-    Runs analysis on a list of Python files.
+    Executes analysis on a list of Python files.
 
-    Workflow:
-    - run pylint (issues)
-    - run radon (complexity)
-    - aggregate results into a unified payload
+    For each file:
+    - run pylint (issue detection)
+    - run radon (complexity measurement)
+    - collect results into a unified structure
 
-    Future improvement:
-    - parallelize analysis for performance
+    Output:
+    - passed into scoring layer to compute overall insights
+
+    Performance note:
+    - currently sequential (simpler for MVP)
+    - could be parallelized in future for large inputs
     """
     file_results = []
 
-    for file_path in files:
+    for index, file_path in enumerate(files, start=1):
+        print(f"Analyzing file {index}/{len(files)}: {file_path}")
         pylint_result = _run_pylint(file_path)
         radon_result = _run_radon(file_path)
 
@@ -215,4 +305,5 @@ def _analyze_python_files(files: list[Path]) -> dict:
             }
         )
 
+    print("Finished analyzing all files")
     return build_score_payload(file_results)
