@@ -1,3 +1,15 @@
+/**
+ * Main application component
+ *
+ * Responsibilities:
+ * - handle file upload flow
+ * - manage loading + error states
+ * - render dashboard results
+ *
+ * Future improvement:
+ * - add state management (e.g., context)
+ * - support historical uploads
+ */
 import { useState } from 'react'
 import UploadForm from './components/UploadForm'
 import ScoreCard from './components/ScoreCard'

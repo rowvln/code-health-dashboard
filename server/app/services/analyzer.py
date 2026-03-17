@@ -1,3 +1,14 @@
+"""
+Analyzer Service
+
+Handles:
+- file ingestion (.py or .zip)
+- extraction of zip archives
+- running static analysis tools (pylint, radon)
+- normalizing results into a structured format
+
+This acts as the bridge between raw tooling output and the scoring system.
+"""
 from __future__ import annotations
 
 import json
@@ -11,6 +22,17 @@ from .scoring import build_score_payload
 
 
 def _should_analyze_file(file_path: Path) -> bool:
+    """
+    Determines whether a file should be included in analysis.
+
+    Filters out:
+    - macOS metadata folders (__MACOSX)
+    - hidden system files (.DS_Store)
+    - AppleDouble metadata files (._*)
+
+    Keeps:
+    - valid Python source files (.py), including underscore-prefixed modules
+    """
     parts = file_path.parts
     name = file_path.name
 
@@ -33,6 +55,15 @@ def analyze_path(file_path: Path) -> dict:
 
 
 def _analyze_zip(zip_path: Path) -> dict:
+    """
+    Extracts and analyzes all valid Python files from a zip archive.
+
+    Notes:
+    - Uses a temporary directory to avoid polluting the project
+    - Recursively scans extracted contents
+    - Filters out system/metadata files
+    - Future improvement: preserve relative paths for better file identification
+    """
     with TemporaryDirectory() as temp_dir:
         extract_dir = Path(temp_dir) / "extracted"
         extract_dir.mkdir(parents=True, exist_ok=True)
@@ -78,6 +109,14 @@ def _normalize_pylint_issue(issue: dict) -> dict:
 
 
 def _run_pylint(file_path: Path) -> dict:
+    """
+    Runs pylint on a given file and returns normalized issue data.
+
+    Notes:
+    - Uses JSON output format for structured parsing
+    - Does not fail on lint errors (check=False)
+    - Future improvement: support configuration via .pylintrc
+    """
     command = [
         shutil.which("pylint") or "pylint",
         str(file_path),
@@ -99,6 +138,18 @@ def _run_pylint(file_path: Path) -> dict:
 
 
 def _run_radon(file_path: Path) -> dict:
+    """
+    Runs radon to calculate cyclomatic complexity.
+
+    Notes:
+    - Handles inconsistent JSON structures returned by radon
+    - Falls back gracefully if parsing fails
+    - Uses max complexity as a representative metric
+
+    Future improvement:
+    - include average complexity
+    - include per-function breakdown
+    """
     command = [
         shutil.which("radon") or "radon",
         "cc",
@@ -139,6 +190,17 @@ def _run_radon(file_path: Path) -> dict:
 
 
 def _analyze_python_files(files: list[Path]) -> dict:
+    """
+    Runs analysis on a list of Python files.
+
+    Workflow:
+    - run pylint (issues)
+    - run radon (complexity)
+    - aggregate results into a unified payload
+
+    Future improvement:
+    - parallelize analysis for performance
+    """
     file_results = []
 
     for file_path in files:

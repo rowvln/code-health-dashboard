@@ -1,3 +1,13 @@
+"""
+Scoring Service
+
+Transforms raw analysis data into:
+- code health scores (0–100)
+- human-readable labels
+- prioritized recommendations
+
+This is a rule-based system designed for clarity and explainability.
+"""
 from __future__ import annotations
 
 from collections import Counter
@@ -13,6 +23,18 @@ SEVERITY_WEIGHTS = {
 
 
 def score_file(issue_types: list[str], complexity: int) -> int:
+    """
+    Calculates a score based on:
+    - severity-weighted issue penalties
+    - complexity penalties
+
+    Design choice:
+    - start from 100 and subtract penalties
+    - ensures scores are intuitive and comparable
+
+    Future improvement:
+    - weight different issue types differently per use case
+    """
     score = 100
     score -= sum(SEVERITY_WEIGHTS.get(issue_type, 1) for issue_type in issue_types)
 
@@ -65,6 +87,18 @@ def get_complexity_label(complexity: int) -> str:
 
 
 def build_recommendations(file_payloads: list[dict], severity_counter: Counter) -> list[str]:
+    """
+    Generates actionable recommendations based on:
+    - highest issue counts
+    - highest complexity
+    - severity distribution
+
+    This is a rule-based system (not AI-driven).
+
+    Goal:
+    - highlight the highest-impact improvements first
+    - keep output understandable for non-technical users
+    """
     recommendations = []
     sorted_files = sorted(file_payloads, key=lambda item: item["score"])
 

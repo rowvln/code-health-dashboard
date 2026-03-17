@@ -1,3 +1,15 @@
+/**
+ * Displays per-file metrics
+ *
+ * Includes:
+ * - score + label
+ * - issue count + label
+ * - complexity + label
+ *
+ * Future improvement:
+ * - sorting
+ * - clickable rows for deep dive
+ */
 export default function FileTable({ files }) {
   return (
     <div className="table-wrap">

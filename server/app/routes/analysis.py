@@ -1,3 +1,14 @@
+"""
+Analysis Route
+
+Handles file uploads and triggers the analysis pipeline.
+
+Responsibilities:
+- validate file input
+- save uploaded file
+- call analyzer service
+- return structured JSON response
+"""
 from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 from werkzeug.utils import secure_filename

@@ -1,3 +1,16 @@
+/**
+ * Displays all detected issues in a readable format
+ *
+ * Each issue includes:
+ * - file
+ * - line number
+ * - type
+ * - message
+ *
+ * Future improvement:
+ * - group by severity
+ * - add filtering/search
+ */
 export default function IssuesList({ issues }) {
   if (!issues || issues.length === 0) {
     return <p className="empty-state">No issues found.</p>
