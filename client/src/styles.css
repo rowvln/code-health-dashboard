@@ -1,0 +1,233 @@
+:root {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #111827;
+  background: #f3f4f6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.app-shell {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+}
+
+.hero {
+  margin-bottom: 1.5rem;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.subtitle {
+  max-width: 700px;
+  color: #4b5563;
+}
+
+.panel {
+  background: white;
+  border-radius: 16px;
+  padding: 1rem;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+
+.upload-form {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+input[type='file'] {
+  padding: 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+}
+
+button {
+  width: fit-content;
+  border: none;
+  background: #111827;
+  color: white;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.dashboard-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.score-card h2 {
+  margin: 0.25rem 0;
+  font-size: 2rem;
+}
+
+.card-label {
+  margin: 0;
+  color: #6b7280;
+}
+
+.card-status {
+  margin: 0.25rem 0 0.5rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.card-description {
+  margin-bottom: 0;
+  color: #4b5563;
+  font-size: 0.95rem;
+}
+
+.panel-wide {
+  grid-column: span 4;
+}
+
+.section-description {
+  margin-top: 0.25rem;
+  color: #4b5563;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.75rem;
+  border-bottom: 1px solid #e5e7eb;
+  vertical-align: top;
+}
+
+.metric-value {
+  font-weight: 700;
+  color: #111827;
+}
+
+.metric-label {
+  margin-top: 0.2rem;
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.recommendation-list {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.recommendation-list li + li {
+  margin-top: 0.65rem;
+}
+
+.issues-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.issue-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  background: #fafafa;
+}
+
+.issue-title {
+  margin: 0 0 0.35rem;
+  color: #111827;
+}
+
+.issue-meta {
+  margin: 0 0 0.35rem;
+}
+
+.issue-message {
+  margin: 0;
+  color: #374151;
+}
+
+.issue-badge {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.issue-warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.issue-error,
+.issue-fatal {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.issue-refactor {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.issue-convention,
+.issue-info {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.empty-state {
+  color: #6b7280;
+  margin: 0;
+}
+
+.error-banner {
+  background: #fee2e2;
+  color: #991b1b;
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 900px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .panel-wide {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .panel-wide {
+    grid-column: span 1;
+  }
+}
