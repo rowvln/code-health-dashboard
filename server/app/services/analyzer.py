@@ -79,7 +79,7 @@ def analyze_path(file_path: Path) -> dict:
     return _analyze_python_files([file_path])
 
 def _analyze_zip(zip_path: Path) -> dict:
-     """
+    """
     Extracts and analyzes Python files from a zip archive.
 
     Workflow:

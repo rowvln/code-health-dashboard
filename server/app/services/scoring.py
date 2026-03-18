@@ -6,25 +6,27 @@ Transforms raw analysis data into:
 - human-readable labels
 - prioritized recommendations
 
-This layer focuses on:
-- clarity over complexity
-- explainable scoring (not AI-driven)
-- actionable outputs for both technical and non-technical users
+This layer is intentionally rule-based to ensure:
+- explainability (no "black box" logic)
+- consistency across runs
+- ease of iteration and extension
 
 Design philosophy:
 - deterministic scoring
-- easy to reason about
-- easy to extend
+- simple mental model (start at 100, subtract penalties)
+- outputs that are understandable to both technical and non-technical users
 
 Future improvements:
-- customizable scoring weights
-- AI-assisted recommendations
-- historical trend tracking
+- configurable scoring weights
+- project-specific scoring profiles
+- AI-assisted recommendation layer
 """
 from __future__ import annotations
 
 from collections import Counter
 
+# Maps issue severity → penalty weight
+# Higher severity = larger impact on score
 SEVERITY_WEIGHTS = {
     "fatal": 10,
     "error": 8,
@@ -41,19 +43,29 @@ def score_file(issue_types: list[str], complexity: int) -> int:
 
     Scoring model:
     - start from 100
-    - subtract penalties based on issue severity
-    - subtract penalties based on complexity thresholds
+    - subtract severity-weighted issue penalties
+    - subtract complexity penalties based on thresholds
 
-    Design choice:
-    - ensures scores are intuitive (higher = better)
-    - keeps scoring explainable and predictable
+    Why this approach:
+    - keeps scoring intuitive (higher = better)
+    - easy to explain to non-technical users
+    - avoids hidden or unpredictable weighting
+
+    Complexity penalties:
+    - 5+   → small penalty
+    - 10+  → moderate penalty
+    - 20+  → high penalty
 
     Future improvements:
-    - dynamic weighting based on project type
+    - dynamic scoring weights
+    - per-project scoring calibration
     """
     score = 100
+
+    # subtract issue penalties
     score -= sum(SEVERITY_WEIGHTS.get(issue_type, 1) for issue_type in issue_types)
 
+    # subtract complexity penalties
     if complexity >= 20:
         score -= 15
     elif complexity >= 10:
@@ -61,10 +73,18 @@ def score_file(issue_types: list[str], complexity: int) -> int:
     elif complexity >= 5:
         score -= 3
 
+    # prevent negative scores
     return max(score, 0)
 
 
 def get_score_label(score: int) -> str:
+    """
+    Converts numeric score → human-readable interpretation.
+
+    Goal:
+    - make results understandable at a glance
+    - bridge technical metrics with business-friendly language
+    """
     if score >= 90:
         return "Excellent health"
     if score >= 75:
@@ -79,6 +99,9 @@ def get_score_label(score: int) -> str:
 
 
 def get_issue_label(issue_count: int) -> str:
+    """
+    Interprets total issue count into a readable label.
+    """
     if issue_count == 0:
         return "No issues found"
     if issue_count <= 5:
@@ -91,6 +114,12 @@ def get_issue_label(issue_count: int) -> str:
 
 
 def get_complexity_label(complexity: int) -> str:
+    """
+    Interprets complexity score into maintainability guidance.
+
+    Helps answer:
+    - "How hard is this code to understand or modify?"
+    """
     if complexity <= 5:
         return "Easy to understand"
     if complexity <= 10:
@@ -102,59 +131,67 @@ def get_complexity_label(complexity: int) -> str:
     return "Very difficult to maintain"
 
 
-def build_recommendations(file_payloads: list[dict]) -> list[str]:
+def build_recommendations(file_payloads: list[dict], severity_counter: Counter) -> list[str]:
     """
-    Generates top actionable recommendations.
+    Generates prioritized, actionable recommendations.
+
+    Inputs:
+    - file-level data (issues + complexity)
+    - aggregated severity distribution
 
     Strategy:
-    - prioritize lowest-scoring files
-    - focus on highest-impact improvements first
-    - limit output to avoid overwhelming users
+    - identify highest-impact problems first
+    - focus on "quick wins" + "big risks"
+    - limit output to top 3–5 recommendations
 
     Important:
-    - rule-based (not dynamically generated with AI)
-    - intentionally simple for interpretability
+    - rule-based (not AI-generated)
+    - deterministic and explainable
 
-    Future improvements:
-    - context-aware recommendations
-    - grouping by issue type
+    Why this matters:
+    - helps users understand *what to do next*
+    - bridges analysis → action
     """
     recommendations = []
-    sorted_files = sorted(file_payloads, key=lambda item: item["score"])
 
+    # identify worst offenders
     highest_issue_file = max(file_payloads, key=lambda item: item["issues"], default=None)
     highest_complexity_file = max(file_payloads, key=lambda item: item["complexity"], default=None)
 
+    # issue-based recommendation
     if highest_issue_file and highest_issue_file["issues"] > 0:
         recommendations.append(
             f"Reduce the number of issues in {highest_issue_file['name']}. "
             f"It currently has {highest_issue_file['issues']} findings and offers one of the fastest paths to improving the overall score."
         )
 
+    # complexity-based recommendation
     if highest_complexity_file and highest_complexity_file["complexity"] >= 10:
         recommendations.append(
             f"Refactor the most complex logic in {highest_complexity_file['name']}. "
             f"Its complexity score is {highest_complexity_file['complexity']}, which suggests the code may be harder to understand, test, and maintain."
         )
 
+    # severity-based recommendations
     if severity_counter.get("fatal", 0) + severity_counter.get("error", 0) > 0:
         recommendations.append(
-            "Fix fatal and error-level issues first. These have the highest chance of causing broken behavior or unreliable results."
+            "Fix fatal and error-level issues first. These have the highest risk of causing failures or incorrect behavior."
         )
 
     if severity_counter.get("warning", 0) > 0:
         recommendations.append(
-            "Resolve warning-level issues next. They are often high-impact fixes that improve reliability and maintainability."
+            "Resolve warning-level issues next. These often represent meaningful improvements to reliability and maintainability."
         )
 
     if severity_counter.get("convention", 0) > 0 or severity_counter.get("refactor", 0) > 0:
         recommendations.append(
-            "Clean up naming, structure, and readability issues. These are usually fast wins that make the code easier for both current and future developers to work with."
+            "Clean up naming, structure, and readability issues. These are usually fast wins that improve developer experience."
         )
 
+    # fallback
     if not recommendations:
         recommendations.append(
-            "No major issues detected. The next step could be trend tracking over time to monitor whether code health improves or declines."
+            "No major issues detected. Consider adding trend tracking to monitor how code health evolves over time."
         )
 
     return recommendations[:5]
@@ -162,32 +199,35 @@ def build_recommendations(file_payloads: list[dict]) -> list[str]:
 
 def build_score_payload(file_results: list[dict]) -> dict:
     """
-    Aggregates file-level analysis into a dashboard-ready payload.
+    Transforms raw analysis results into a frontend-ready payload.
 
-    Produces:
-    - overall score
-    - summary metrics (issues, complexity, etc.)
-    - per-file breakdown
-    - recommendations
+    Responsibilities:
+    - compute per-file scores + labels
+    - aggregate overall metrics
+    - flatten issue data for display
+    - generate recommendations
 
-    This is the final transformation layer before data is sent to the frontend.
-
-    Design focus:
-    - consistency
-    - readability
-    - frontend-friendly structure
+    Output is designed for:
+    - dashboard rendering
+    - easy consumption by UI components
     """
     payload_files = []
     severity_counter = Counter()
     issues_found = []
 
     for file_result in file_results:
+        # extract issue types for scoring
         issue_types = [issue.get("type", "info") for issue in file_result["issues"]]
+
+        # update global severity distribution
         severity_counter.update(issue_types)
+
+        # compute file-level metrics
         file_score = score_file(issue_types, file_result["complexity"])
         issue_count = len(file_result["issues"])
         complexity = file_result["complexity"]
 
+        # build file summary
         payload_files.append(
             {
                 "name": file_result["name"],
@@ -200,6 +240,7 @@ def build_score_payload(file_results: list[dict]) -> dict:
             }
         )
 
+        # flatten issues for UI rendering
         for issue in file_result["issues"]:
             issues_found.append(
                 {
@@ -210,10 +251,18 @@ def build_score_payload(file_results: list[dict]) -> dict:
                 }
             )
 
-    overall_score = round(sum(item["score"] for item in payload_files) / len(payload_files), 0) if payload_files else 100
-    total_issues = sum(item["issues"] for item in payload_files)
-    average_complexity = round(sum(item["complexity"] for item in payload_files) / len(payload_files), 0) if payload_files else 0
+    # aggregate metrics
+    overall_score = round(
+        sum(item["score"] for item in payload_files) / len(payload_files), 0
+    ) if payload_files else 100
 
+    total_issues = sum(item["issues"] for item in payload_files)
+
+    average_complexity = round(
+        sum(item["complexity"] for item in payload_files) / len(payload_files), 0
+    ) if payload_files else 0
+
+    # final payload
     return {
         "score": int(overall_score),
         "score_label": get_score_label(int(overall_score)),
